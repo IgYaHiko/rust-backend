@@ -1,8 +1,9 @@
 use chrono::{DateTime, Utc};
-use  serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
+// User Models
 #[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
 pub struct User {
     pub id: Uuid,
@@ -10,8 +11,8 @@ pub struct User {
     pub username: String,
     #[serde(skip_serializing)]
     pub password_hash: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,6 +40,7 @@ pub struct UserResponse {
     pub email: String,
     pub username: String,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl From<User> for UserResponse {
@@ -47,7 +49,8 @@ impl From<User> for UserResponse {
             id: user.id,
             email: user.email,
             username: user.username,
-            created_at: user.created_at,
+            created_at: user.created_at.unwrap_or_else(Utc::now),
+            updated_at: user.updated_at.unwrap_or_else(Utc::now),
         }
     }
 }
@@ -59,8 +62,8 @@ pub struct Post {
     pub title: String,
     pub content: String,
     pub user_id: Uuid,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,8 +95,8 @@ impl From<Post> for PostResponse {
             title: post.title,
             content: post.content,
             user_id: post.user_id,
-            created_at: post.created_at,
-            updated_at: post.updated_at,
+            created_at: post.created_at.unwrap_or_else(Utc::now),
+            updated_at: post.updated_at.unwrap_or_else(Utc::now),
         }
     }
 }
