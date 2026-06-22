@@ -1,0 +1,4 @@
+name = "simple-api"
+
+[secrets]
+JWT_SECRET = "gpOObcvBZF2Aimnp1sd8zQFl3GS9BYIfkneAzAVfO1s="

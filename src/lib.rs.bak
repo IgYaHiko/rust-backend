@@ -1,0 +1,96 @@
+mod db;
+mod models;
+mod handlers;
+mod auth;
+mod error;
+mod state;
+
+use axum::{
+    routing::{get, post, put, delete},
+    Router,
+    http::Method,
+    middleware,
+};
+use tower_http::cors::{CorsLayer, Any};
+use std::sync::Arc;
+use tracing::info;
+use tower_http::trace::TraceLayer;
+use sqlx::PgPool;
+
+use handlers::posts;
+use auth::jwt::JwtService;
+use auth::middleware::auth_middleware;
+use state::AppState;
+
+#[shuttle_runtime::main]
+async fn main(
+    #[shuttle_shared_db::Postgres] pool: PgPool,
+) -> Result<shuttle_axum::AxumService, shuttle_runtime::Error> {
+    // Create tables
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS users (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            email TEXT UNIQUE NOT NULL,
+            username TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        CREATE TABLE IF NOT EXISTS posts (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_posts_user_id ON posts(user_id);
+        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+        "#
+    )
+    .execute(&pool)
+    .await
+    .map_err(|e| shuttle_runtime::Error::from(e))?;
+    
+    info!("Database connected successfully");
+
+    let jwt_secret = std::env::var("JWT_SECRET")
+        .unwrap_or_else(|_| "your-super-secret-key-change-this".to_string());
+    let jwt_service = Arc::new(JwtService::new(&jwt_secret));
+
+    let state = AppState {
+        pool,
+        jwt_service: jwt_service.clone(),
+    };
+
+    let router = Router::new()
+        .route("/api/auth/register", post(auth::handlers::register))
+        .route("/api/auth/login", post(auth::handlers::login))
+        .nest(
+            "/api/posts",
+            Router::new()
+                .route("/", get(posts::get_all))
+                .route("/", post(posts::create))
+                .route("/:id", get(posts::get_one))
+                .route("/:id", put(posts::update))
+                .route("/:id", delete(posts::delete))
+                .layer(middleware::from_fn_with_state(
+                    jwt_service.clone(),
+                    auth_middleware
+                ))
+        )
+        .with_state(state)
+        .layer(
+            CorsLayer::new()
+                .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+                .allow_origin(Any)
+                .allow_headers(Any)
+        )
+        .layer(TraceLayer::new_for_http());
+
+    // For Shuttle 0.56.0, use this
+    Ok(router.into())
+}
